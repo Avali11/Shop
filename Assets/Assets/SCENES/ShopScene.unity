@@ -13087,6 +13087,17 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 1773623360729482, guid: 11aaea5348574644a9eb4f4504fcce3f, type: 3}
   m_PrefabInstance: {fileID: 1093786404}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1093786408 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 114657890492222300, guid: 11aaea5348574644a9eb4f4504fcce3f, type: 3}
+  m_PrefabInstance: {fileID: 1093786404}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1093786405}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ec72980442fddac4d86e75ab24b4d027, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1001 &1101785697
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -17362,6 +17373,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Settings_Controller
   playerObject: {fileID: 1093786407}
+  movementScript: {fileID: 0}
+  lookScript: {fileID: 1093786408}
   settingsPanel: {fileID: 587672596}
 --- !u!1001 &1457097335
 PrefabInstance:

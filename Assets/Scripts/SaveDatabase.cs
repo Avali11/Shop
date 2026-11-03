@@ -1,75 +1,264 @@
 using System;
 using System.IO;
+using SQLite;
 using UnityEngine;
+
+// ---------------------------------------------------------
+// МОДЕЛЬ ДАННЫХ
+// ---------------------------------------------------------
+
+[Table("GameSave")]
+public class GameSaveRecord
+{
+    [PrimaryKey]
+    public int Id { get; set; }
+
+    [Column("scene_name")]
+    public string SceneName { get; set; }
+
+    [Column("pos_x")]
+    public double PosX { get; set; }
+
+    [Column("pos_y")]
+    public double PosY { get; set; }
+
+    [Column("pos_z")]
+    public double PosZ { get; set; }
+}
+
+// ---------------------------------------------------------
+// ОСНОВНОЙ КЛАСС БАЗЫ ДАННЫХ
+// ---------------------------------------------------------
 
 public static class SaveDatabase
 {
-    private static string dbPath = Application.persistentDataPath + "/GameSave_SQL.txt";
+    private static readonly string dbPath =
+        Path.Combine(Application.persistentDataPath, "GameSave.db");
+
+    // -----------------------------------------------------
+    // СОЗДАНИЕ И ПОДКЛЮЧЕНИЕ К БАЗЕ
+    // -----------------------------------------------------
+
+    private static SQLiteConnection OpenDatabase()
+    {
+        Directory.CreateDirectory(Application.persistentDataPath);
+
+        SQLiteConnection database = new SQLiteConnection(dbPath);
+
+        database.CreateTable<GameSaveRecord>();
+
+        return database;
+    }
 
     public static void InitializeDatabase()
     {
-        if (!File.Exists(dbPath))
+        try
         {
-            string defaultTable = "CREATE TABLE GameSave (id INTEGER PRIMARY KEY, scene_name TEXT, pos_x REAL, pos_y REAL, pos_z REAL);\n";
-            File.WriteAllText(dbPath, defaultTable);
+            using (SQLiteConnection database = OpenDatabase())
+            {
+                Debug.Log("SQLite database initialized: " + dbPath);
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Database initialization error: " + e);
         }
     }
 
+    // -----------------------------------------------------
+    // ПРОВЕРКА НАЛИЧИЯ СОХРАНЕНИЯ
+    // -----------------------------------------------------
+
     public static bool HasSaveData()
     {
-        InitializeDatabase();
-        string content = File.ReadAllText(dbPath);
-        return content.Contains("INSERT OR REPLACE");
+        try
+        {
+            using (SQLiteConnection database = OpenDatabase())
+            {
+                GameSaveRecord save = database.Find<GameSaveRecord>(1);
+
+                return save != null &&
+                       !string.IsNullOrEmpty(save.SceneName);
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Save checking error: " + e);
+            return false;
+        }
     }
 
-    public static void SaveGame(string sceneName, Vector3 position)
+    // -----------------------------------------------------
+    // СОХРАНЕНИЕ ИГРЫ
+    // -----------------------------------------------------
+
+    public static bool SaveGame(string sceneName, Vector3 position)
     {
-        InitializeDatabase();
+        if (string.IsNullOrEmpty(sceneName))
+        {
+            Debug.LogError("Невозможно сохранить игру: название сцены пустое.");
+            return false;
+        }
 
-        string sqlQuery = $"\nINSERT OR REPLACE INTO GameSave (id, scene_name, pos_x, pos_y, pos_z) " +
-                          $"VALUES (1, '{sceneName}', {position.x:F2}, {position.y:F2}, {position.z:F2});";
+        try
+        {
+            using (SQLiteConnection database = OpenDatabase())
+            {
+                GameSaveRecord save = new GameSaveRecord
+                {
+                    Id = 1,
+                    SceneName = sceneName,
+                    PosX = position.x,
+                    PosY = position.y,
+                    PosZ = position.z
+                };
 
-        string baseContent = "CREATE TABLE GameSave (id INTEGER PRIMARY KEY, scene_name TEXT, pos_x REAL, pos_y REAL, pos_z REAL);\n";
+                // Обновляем существующую запись или создаём новую.
+                database.InsertOrReplace(save);
 
-        File.WriteAllText(dbPath, baseContent + sqlQuery);
+                // Проверяем, что запись действительно появилась.
+                GameSaveRecord verification = database.Find<GameSaveRecord>(1);
 
-        // Дублируем в PlayerPrefs для быстрого доступа
-        PlayerPrefs.SetString("SQL_Scene", sceneName);
-        PlayerPrefs.SetFloat("SQL_X", position.x);
-        PlayerPrefs.SetFloat("SQL_Y", position.y);
-        PlayerPrefs.SetFloat("SQL_Z", position.z);
-        PlayerPrefs.Save();
+                if (verification == null ||
+                    verification.SceneName != sceneName)
+                {
+                    Debug.LogError("Проверка сохранения не пройдена.");
+                    return false;
+                }
 
-        Debug.Log("Game data saved.");
+                Debug.Log(
+                    "SQLite: игра сохранена. Сцена: " + sceneName +
+                    ", позиция: " + position
+                );
+
+                return true;
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Game saving error: " + e);
+            return false;
+        }
     }
+
+    // -----------------------------------------------------
+    // ПОЛУЧЕНИЕ НАЗВАНИЯ СОХРАНЁННОЙ СЦЕНЫ
+    // -----------------------------------------------------
 
     public static string GetSavedScene()
     {
-        // Если в PlayerPrefs пусто, но файл существует — попробуем вернуть дефолт
-        return PlayerPrefs.GetString("SQL_Scene", "HomeScene");
+        try
+        {
+            using (SQLiteConnection database = OpenDatabase())
+            {
+                GameSaveRecord save = database.Find<GameSaveRecord>(1);
+
+                return save != null ? save.SceneName : string.Empty;
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Scene loading error: " + e);
+            return string.Empty;
+        }
     }
+
+    // -----------------------------------------------------
+    // ПОЛУЧЕНИЕ СОХРАНЁННЫХ КООРДИНАТ
+    // -----------------------------------------------------
 
     public static Vector3 LoadPositionStatic()
     {
-        float x = PlayerPrefs.GetFloat("SQL_X", 0f);
-        float y = PlayerPrefs.GetFloat("SQL_Y", 0f);
-        float z = PlayerPrefs.GetFloat("SQL_Z", 0f);
-        return new Vector3(x, y, z);
+        try
+        {
+            using (SQLiteConnection database = OpenDatabase())
+            {
+                GameSaveRecord save = database.Find<GameSaveRecord>(1);
+
+                if (save == null)
+                    return Vector3.zero;
+
+                return new Vector3(
+                    (float)save.PosX,
+                    (float)save.PosY,
+                    (float)save.PosZ
+                );
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Position loading error: " + e);
+            return Vector3.zero;
+        }
     }
 
-    public static void ClearSave()
+    // -----------------------------------------------------
+    // ЗАГРУЗКА СЦЕНЫ И КООРДИНАТ
+    // -----------------------------------------------------
+
+    public static bool TryLoadGame(
+        out string sceneName,
+        out Vector3 position)
     {
-        InitializeDatabase();
+        sceneName = string.Empty;
+        position = Vector3.zero;
 
-        string cleanTable = "CREATE TABLE GameSave (id INTEGER PRIMARY KEY, scene_name TEXT, pos_x REAL, pos_y REAL, pos_z REAL);\n";
-        File.WriteAllText(dbPath, cleanTable);
+        try
+        {
+            using (SQLiteConnection database = OpenDatabase())
+            {
+                GameSaveRecord save = database.Find<GameSaveRecord>(1);
 
-        PlayerPrefs.DeleteKey("SQL_Scene");
-        PlayerPrefs.DeleteKey("SQL_X");
-        PlayerPrefs.DeleteKey("SQL_Y");
-        PlayerPrefs.DeleteKey("SQL_Z");
-        PlayerPrefs.Save();
+                if (save == null || string.IsNullOrEmpty(save.SceneName))
+                    return false;
 
-        Debug.Log("Save data cleared.");
+                sceneName = save.SceneName;
+
+                position = new Vector3(
+                    (float)save.PosX,
+                    (float)save.PosY,
+                    (float)save.PosZ
+                );
+
+                return true;
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Game loading error: " + e);
+            return false;
+        }
+    }
+
+    // -----------------------------------------------------
+    // УДАЛЕНИЕ СОХРАНЕНИЯ
+    // -----------------------------------------------------
+
+    public static bool ClearSave()
+    {
+        try
+        {
+            using (SQLiteConnection database = OpenDatabase())
+            {
+                database.Delete<GameSaveRecord>(1);
+            }
+
+            // Удаляем данные старой системы сохранений.
+            PlayerPrefs.DeleteKey("SQL_Scene");
+            PlayerPrefs.DeleteKey("SQL_X");
+            PlayerPrefs.DeleteKey("SQL_Y");
+            PlayerPrefs.DeleteKey("SQL_Z");
+
+            PlayerPrefs.Save();
+
+            Debug.Log("Save data cleared successfully!");
+
+            return true;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Save clearing error: " + e);
+            return false;
+        }
     }
 }

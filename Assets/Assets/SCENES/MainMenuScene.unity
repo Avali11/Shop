@@ -639,8 +639,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 294c34e9f82ef46418f528ca36be6143, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MainMenu_Controller
-  mainMenu: {fileID: 2055802480}
+  startButton: {fileID: 2048809054}
   continueButton: {fileID: 199676722}
+  exitButton: {fileID: 1077813338}
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0

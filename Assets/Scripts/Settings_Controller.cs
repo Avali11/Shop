@@ -3,34 +3,53 @@ using UnityEngine.SceneManagement;
 
 public class Settings_Controller : MonoBehaviour
 {
-    [Header("Player Object")]
-    public GameObject playerObject; // Сюда в инспекторе тащим Игоря
+    [Header("Игрок")]
+    public GameObject playerObject;
 
-    [Header("UI Panels")]
-    public GameObject settingsPanel; // Сюда тащим саму панель настроек
+    [Header("Компоненты управления игроком")]
+    public MonoBehaviour movementScript;
+    public MonoBehaviour lookScript;
 
-    private bool isPaused = false;   // Флаг паузы
+    [Header("Интерфейс")]
+    public GameObject settingsPanel;
 
-    // Скрипты ходьбы Игоря, чтобы заморозить его при паузе
-    private MonoBehaviour movementScript;
-    private MonoBehaviour inputScript;
+    private bool isPaused = false;
 
-    void Start()
+    private bool movementWasEnabled;
+    private bool lookWasEnabled;
+
+    private void Start()
     {
-        // Находим компоненты управления на Игоре
-        if (playerObject != null)
+        if (playerObject == null)
         {
-            movementScript = playerObject.GetComponent("FirstPersonMovement") as MonoBehaviour;
-            inputScript = playerObject.GetComponent("Input") as MonoBehaviour;
+            playerObject = GameObject.FindWithTag("Player");
         }
 
-        // При старте игры панель всегда скрыта
-        if (settingsPanel != null) settingsPanel.SetActive(false);
+        if (movementScript == null || lookScript == null)
+        {
+            Debug.LogWarning(
+                "Settings_Controller: назначьте скрипты движения " +
+                "и вращения камеры в Inspector."
+            );
+        }
+
+        if (movementScript != null)
+            movementWasEnabled = movementScript.enabled;
+
+        if (lookScript != null)
+            lookWasEnabled = lookScript.enabled;
+
+        if (settingsPanel != null)
+            settingsPanel.SetActive(false);
+
+        isPaused = false;
+        Time.timeScale = 1f;
+
+        SetCursorState(false);
     }
 
-    void Update()
+    private void Update()
     {
-        // Открываем или закрываем панель строго по кнопке Escape
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             if (isPaused)
@@ -40,63 +59,119 @@ public class Settings_Controller : MonoBehaviour
         }
     }
 
-    // МЕТОД: ОТКРЫТЬ НАСТРОЙКИ (Вызывается по Escape)
+    // =====================================================
+    // ОТКРЫТИЕ НАСТРОЕК
+    // =====================================================
+
     public void OpenSettings()
     {
+        if (isPaused)
+            return;
+
         isPaused = true;
-        Time.timeScale = 0f; // Ставим игру на паузу
+        Time.timeScale = 0f;
 
-        if (settingsPanel != null) settingsPanel.SetActive(true); // Включаем панель
+        if (settingsPanel != null)
+            settingsPanel.SetActive(true);
 
-        SetPlayerControl(false); // Замораживаем Игоря, освобождаем мышку
+        SetPlayerControl(false);
+        SetCursorState(true);
+
+        Debug.Log("Меню настроек открыто. Игра на паузе.");
     }
 
-    // МЕТОД: ВЕРНУТЬСЯ В ИГРУ (Вызывается повторным нажатием Escape)
+    // =====================================================
+    // ВОЗВРАЩЕНИЕ В ИГРУ
+    // =====================================================
+
     public void ResumeGame()
     {
+        if (!isPaused)
+            return;
+
         isPaused = false;
-        Time.timeScale = 1f; // Возвращаем время в норму
+        Time.timeScale = 1f;
 
-        if (settingsPanel != null) settingsPanel.SetActive(false); // Прячем панель
+        if (settingsPanel != null)
+            settingsPanel.SetActive(false);
 
-        SetPlayerControl(true); // Игорь снова ходит, мышка прячется в центр
+        SetPlayerControl(true);
+        SetCursorState(false);
+
+        Debug.Log("Игра продолжена.");
     }
 
-    // МЕТОД ДЛЯ КНОПКИ: SAVE GAME (Исправленный под нашу SQL базу данных)
+    // =====================================================
+    // СОХРАНЕНИЕ ИГРЫ
+    // =====================================================
+
     public void ClickSaveGame()
     {
-        // Вызываем сохранение через наш главный вечный контроллер меню
-        if (MainMenu_Controller.Instance != null)
+        if (MainMenu_Controller.Instance == null)
         {
-            MainMenu_Controller.Instance.SaveCurrentGame();
-            Debug.Log("Game Saved Successfully through SQL System!");
+            Debug.LogError("Не найден MainMenu_Controller. Сохранение невозможно.");
+            return;
+        }
+
+        bool saved = MainMenu_Controller.Instance.SaveCurrentGame();
+
+        if (saved)
+        {
+            Debug.Log("Сохранение успешно выполнено.");
         }
         else
         {
-            Debug.LogError("Ошибка: На сцене не найден вечный MainMenu_Controller!");
+            Debug.LogError("Сохранение не выполнено. Проверьте ошибки выше в Console.");
         }
     }
 
-    // МЕТОД ДЛЯ КНОПКИ: EXIT TO MENU
+    // =====================================================
+    // ВОЗВРАЩЕНИЕ В ГЛАВНОЕ МЕНЮ
+    // =====================================================
+
     public void ClickExitToMenu()
     {
-        // Сохраняем игру перед выходом, если главный контроллер на месте
-        if (MainMenu_Controller.Instance != null)
-        {
-            MainMenu_Controller.Instance.SaveCurrentGame();
-        }
+        // Важно: здесь НЕ сохраняем игру.
+        // Существующее сохранение остаётся без изменений.
 
-        Time.timeScale = 1f; // Возвращаем время в норму перед сменой сцены
-        SceneManager.LoadScene("MainMenuScene"); // Уходим в главное меню
+        isPaused = false;
+        Time.timeScale = 1f;
+
+        SetCursorState(true);
+
+        Debug.Log("Возвращение в главное меню без автоматического сохранения.");
+
+        SceneManager.LoadScene("MainMenuScene");
     }
 
-    // Логика блокировки Игоря и мышки
+    // =====================================================
+    // УПРАВЛЕНИЕ КОМПОНЕНТАМИ ИГРОКА
+    // =====================================================
+
     private void SetPlayerControl(bool state)
     {
-        if (movementScript != null) movementScript.enabled = state;
-        if (inputScript != null) inputScript.enabled = state;
+        if (movementScript != null)
+        {
+            movementScript.enabled = state
+                ? movementWasEnabled
+                : false;
+        }
 
-        if (!state)
+        if (lookScript != null)
+        {
+            lookScript.enabled = state
+                ? lookWasEnabled
+                : false;
+        }
+    }
+
+    // =====================================================
+    // УПРАВЛЕНИЕ КУРСОРОМ
+    // =====================================================
+
+    private void SetCursorState(bool menuMode)
+    {
+        if (menuMode)
         {
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
@@ -106,5 +181,17 @@ public class Settings_Controller : MonoBehaviour
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
         }
+    }
+
+    // =====================================================
+    // ОЧИСТКА ПРИ ПЕРЕХОДЕ МЕЖДУ СЦЕНАМИ
+    // =====================================================
+
+    private void OnDestroy()
+    {
+        Time.timeScale = 1f;
+
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
     }
 }

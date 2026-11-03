@@ -1,3 +1,4 @@
+
 using UnityEngine;
 using TMPro;
 using UnityEngine.SceneManagement;
@@ -35,12 +36,26 @@ public class Mother_Dialog : MonoBehaviour
     private int currentLineIndex = 0; // Индекс текущей строчки диалога
     private bool dialogueStarted = false; // Идет ли диалог прямо сейчас
     private bool isFinalDialogue = false; // Какой диалог включать: старт или финал
+    private bool gameOverActive = false; // Активен ли финальный экран
 
     private MonoBehaviour movementScript; // Скрипт ходьбы Игоря
     private MonoBehaviour inputScript;    // Скрипт крутилки камеры Игоря
 
+    private bool previousCursorVisible;
+    private CursorLockMode previousCursorLockState;
+    private float previousTimeScale = 1f;
+
     void Start()
     {
+        // Если игрок не назначен в Inspector, ищем его по тегу Player
+        if (playerObject == null)
+        {
+            GameObject foundPlayer = GameObject.FindWithTag("Player");
+
+            if (foundPlayer != null)
+                playerObject = foundPlayer;
+        }
+
         // Ищем компоненты управления на игроке, чтобы остановить его во время беседы
         if (playerObject != null)
         {
@@ -52,10 +67,10 @@ public class Mother_Dialog : MonoBehaviour
         if (dialoguePanel != null) dialoguePanel.SetActive(false);
         if (gameOverPanel != null) gameOverPanel.SetActive(false);
 
-        // ПРОВЕРКА СОСТОЯНИЯ: Если кассир в магазине оставил флаг покупки, значит это финал
+        // Проверяем, купил ли игрок товары в магазине
         if (PlayerPrefs.HasKey("BoughtItems") && PlayerPrefs.GetInt("BoughtItems") == 1)
         {
-            isFinalDialogue = true; // Переключаем маму в режим финального диалога
+            isFinalDialogue = true;
         }
     }
 
@@ -63,13 +78,13 @@ public class Mother_Dialog : MonoBehaviour
     {
         if (playerObject == null) return;
 
-        // Если игра уже завершена и горит экран Game Over, блокируем всё
-        if (gameOverPanel != null && gameOverPanel.activeSelf) return;
+        // Во время Game Over полностью блокируем дальнейшие действия
+        if (gameOverActive) return;
 
         // Считаем расстояние до Игоря
         float distance = Vector3.Distance(transform.position, playerObject.transform.position);
 
-        // ЕСЛИ ЕЩЕ НЕ ГОВОРИМ: свободно ходим, ждем нажатия F на правильной дистанции
+        // Если диалог не начат, ждём нажатия F на нужной дистанции
         if (!dialogueStarted)
         {
             if (distance <= triggerDistance && Input.GetKeyDown(KeyCode.F))
@@ -77,7 +92,7 @@ public class Mother_Dialog : MonoBehaviour
                 StartConversation();
             }
         }
-        // ЕСЛИ ДИАЛОГ ИДЕТ: листаем реплики строго по кнопке F
+        // Если диалог идёт, листаем реплики по кнопке F
         else
         {
             if (Input.GetKeyDown(KeyCode.F))
@@ -93,10 +108,11 @@ public class Mother_Dialog : MonoBehaviour
         dialogueStarted = true;
         currentLineIndex = 0;
 
-        if (dialoguePanel != null) dialoguePanel.SetActive(true); // Включаем плашку
-        SetPlayerControl(false); // Замораживаем Игоря, чтобы не ушел посреди речи
+        if (dialoguePanel != null) dialoguePanel.SetActive(true);
 
-        DisplayCurrentLine(); // Показываем первую строчку
+        SetPlayerControl(false);
+
+        DisplayCurrentLine();
     }
 
     // Листание реплик на кнопку F
@@ -104,7 +120,7 @@ public class Mother_Dialog : MonoBehaviour
     {
         currentLineIndex++;
 
-        // Выбираем правильный массив реплик (финал или старт)
+        // Выбираем правильный массив реплик
         string[] activeLines = isFinalDialogue ? finalLines : startLines;
 
         // Если дочитали до конца списков
@@ -123,41 +139,81 @@ public class Mother_Dialog : MonoBehaviour
     {
         if (characterText != null)
         {
-            characterText.text = isFinalDialogue ? finalLines[currentLineIndex] : startLines[currentLineIndex];
+            characterText.text = isFinalDialogue
+                ? finalLines[currentLineIndex]
+                : startLines[currentLineIndex];
         }
     }
 
     // Завершение разговора
     void EndConversation()
     {
-        if (dialoguePanel != null) dialoguePanel.SetActive(false); // Прячем плашку
+        if (dialoguePanel != null)
+            dialoguePanel.SetActive(false);
 
         if (!isFinalDialogue)
         {
-            // ЕСЛИ НАЧАЛО ИГРЫ: автоматически загружаем сцену магазина ShopScene
+            // Если это начало игры, загружаем магазин
             SceneManager.LoadScene("ShopScene");
         }
         else
         {
-            // ЕСЛИ ФИНАЛ ИГРЫ: включаем панель конца игры Game Over
-            if (gameOverPanel != null)
-            {
-                gameOverPanel.SetActive(true);
-
-                // Освобождаем курсор мыши для клика по кнопке
-                Cursor.lockState = CursorLockMode.None;
-                Cursor.visible = true;
-            }
+            // Если это финал, показываем Game Over и замораживаем игру
+            ShowGameOver();
         }
+    }
+
+    // Показываем финальный экран и блокируем движение и камеру
+    void ShowGameOver()
+    {
+        gameOverActive = true;
+
+        // Запоминаем состояние времени и курсора
+        previousTimeScale = Time.timeScale;
+        previousCursorVisible = Cursor.visible;
+        previousCursorLockState = Cursor.lockState;
+
+        // Останавливаем игровое время
+        Time.timeScale = 0f;
+
+        // Отключаем управление игроком
+        SetPlayerControl(false);
+
+        // Показываем экран Game Over
+        if (gameOverPanel != null)
+            gameOverPanel.SetActive(true);
+
+        // Показываем курсор, чтобы можно было нажать кнопку
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
     }
 
     // МЕТОД ДЛЯ КНОПКИ ВНУТРИ ПАНЕЛИ GAME OVER
     public void ClickExitToMenuFromGameOver()
     {
-        // Полностью очищаем память от временных флагов, чтобы при Новой игре всё началось сначала
+        // Удаляем настоящее сохранение из SQLite
+        bool saveCleared = SaveDatabase.ClearSave();
+
+        if (saveCleared)
+        {
+            Debug.Log("Финал игры: сохранение очищено.");
+        }
+        else
+        {
+            Debug.LogWarning("Финал игры: не удалось подтвердить очистку сохранения.");
+        }
+
+        // Удаляем временный флаг покупки
         PlayerPrefs.DeleteKey("BoughtItems");
         PlayerPrefs.DeleteKey("HasSave");
         PlayerPrefs.Save();
+
+        // Возвращаем нормальное состояние времени перед сменой сцены
+        Time.timeScale = 1f;
+
+        // Оставляем курсор свободным для главного меню
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
 
         // Уходим обратно в главное меню
         SceneManager.LoadScene("MainMenuScene");
@@ -166,8 +222,11 @@ public class Mother_Dialog : MonoBehaviour
     // Включение/выключение управления игроком и показ мышки
     private void SetPlayerControl(bool state)
     {
-        if (movementScript != null) movementScript.enabled = state;
-        if (inputScript != null) inputScript.enabled = state;
+        if (movementScript != null)
+            movementScript.enabled = state;
+
+        if (inputScript != null)
+            inputScript.enabled = state;
 
         if (!state)
         {
@@ -179,5 +238,11 @@ public class Mother_Dialog : MonoBehaviour
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
         }
+    }
+
+    void OnDestroy()
+    {
+        // Не оставляем игру на паузе, если объект уничтожается при смене сцены
+        Time.timeScale = 1f;
     }
 }

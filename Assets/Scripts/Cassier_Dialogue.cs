@@ -1,19 +1,21 @@
+
 using UnityEngine;
 using TMPro;
 using UnityEngine.SceneManagement;
 
 public class Cassier_Dialogue : MonoBehaviour
 {
-    [Header("Настройки Игрока")]
-    public GameObject playerObject; // Сюда в инспекторе перетащи игрока (Игоря)
-    public float triggerDistance = 2.5f; // Дистанция, на которой можно начать разговор
+    public static bool IsDialogueActive { get; private set; }
 
-    [Header("UI Элементы Диалога")]
-    public GameObject dialoguePanel; // Панелька диалога (которая появляется)
-    public TextMeshProUGUI characterText; // Текст внутри панельки, куда пишутся реплики
+    [Header("Настройки игрока")]
+    public GameObject playerObject;
+    public float triggerDistance = 2.5f;
 
-    // Массив (список) реплик для диалога. Ровно 10 штук, по одной на каждый клик.
-    private string[] dialogueLines = new string[]
+    [Header("UI элементы диалога")]
+    public GameObject dialoguePanel;
+    public TextMeshProUGUI characterText;
+
+    private readonly string[] dialogueLines =
     {
         "Кассир: Здравствуйте! Вы готовы оплатить ваши покупки?",
         "Игорь: Да, здравствуйте. Вот всё, что я выбрал в магазине.",
@@ -27,118 +29,151 @@ public class Cassier_Dialogue : MonoBehaviour
         "Кассир: Да, всё отлично! Спасибо за покупку, хорошего дня!"
     };
 
-    private int currentLineIndex = 0; // Номер реплики, которую мы сейчас читаем
-    private bool dialogueStarted = false; // Флаг: начался ли диалог
+    private int currentLineIndex;
+    private bool dialogueStarted;
+    private bool dialogueCompleted;
 
-    private MonoBehaviour movementScript; // Скрипт ходьбы игрока
-    private MonoBehaviour inputScript;    // Скрипт ввода игрока
+    private MonoBehaviour movementScript;
+    private MonoBehaviour inputScript;
 
-    void Start()
+    private void Start()
     {
-        // Ищем компоненты управления на игроке, чтобы отключить их во время болтовни
         if (playerObject != null)
         {
-            movementScript = playerObject.GetComponent("FirstPersonMovement") as MonoBehaviour;
-            inputScript = playerObject.GetComponent("Input") as MonoBehaviour;
+            movementScript =
+                playerObject.GetComponent("FirstPersonMovement")
+                as MonoBehaviour;
+
+            inputScript =
+                playerObject.GetComponent("Input")
+                as MonoBehaviour;
         }
 
-        // При старте игры обязательно прячем панель диалога
-        if (dialoguePanel != null) dialoguePanel.SetActive(false);
+        if (dialoguePanel != null)
+            dialoguePanel.SetActive(false);
     }
 
-    void Update()
+    private void Update()
     {
-        if (playerObject == null) return;
+        if (playerObject == null || dialogueCompleted)
+            return;
 
-        // Считаем расстояние между кассиром и игроком
-        float distance = Vector3.Distance(transform.position, playerObject.transform.position);
-
-        // ЕСЛИ ДИАЛОГ ЕЩЕ НЕ НАЧАТ: проверяем расстояние и нажатие кнопки F
-        if (!dialogueStarted)
-        {
-            if (distance <= triggerDistance && Input.GetKeyDown(KeyCode.F))
-            {
-                StartDialogue();
-            }
-        }
-        // ЕСЛИ ДИАЛОГ УЖЕ ИДЕТ: теперь тоже ждем нажатия кнопки F, чтобы листать дальше
-        else
+        // Если кассир уже разговаривает, F относится только к нему.
+        if (dialogueStarted)
         {
             if (Input.GetKeyDown(KeyCode.F))
-            {
                 AdvanceDialogue();
-            }
+
+            return;
+        }
+
+        // Не начинаем разговор во время диалога Леры.
+        if (LeraNPCController.IsDialogueActive)
+            return;
+
+        // Не обрабатываем то же нажатие F, которым закончился
+        // диалог Леры.
+        if (Time.frameCount <=
+            LeraNPCController.BlockInteractionsThroughFrame)
+            return;
+
+        float distance = Vector3.Distance(
+            transform.position,
+            playerObject.transform.position
+        );
+
+        if (distance <= triggerDistance &&
+            Input.GetKeyDown(KeyCode.F))
+        {
+            StartDialogue();
         }
     }
 
-
-    // Метод, который запускает разговор
-    void StartDialogue()
+    private void StartDialogue()
     {
+        if (dialogueStarted ||
+            dialogueCompleted ||
+            LeraNPCController.IsDialogueActive)
+            return;
+
         dialogueStarted = true;
-        currentLineIndex = 0; // Начинаем с самой первой реплики (ноль)
+        IsDialogueActive = true;
+        currentLineIndex = 0;
 
-        if (dialoguePanel != null) dialoguePanel.SetActive(true); // Показываем панель диалога
-        SetPlayerControl(false); // Стопаем Игоря (чтобы не убежал во время разговора)
+        if (dialoguePanel != null)
+            dialoguePanel.SetActive(true);
 
-        DisplayCurrentLine(); // Показываем первую строчку текста
+        SetPlayerControl(false);
+        DisplayCurrentLine();
     }
 
-    // Метод, который переключает реплики по клику мышки
-    void AdvanceDialogue()
+    private void AdvanceDialogue()
     {
-        currentLineIndex++; // Переходим к следующей строчке (увеличиваем индекс на 1)
+        if (!dialogueStarted)
+            return;
 
-        // Если мы прочитали все 10 строчек, то завершаем диалог и уходим на другую сцену
+        currentLineIndex++;
+
         if (currentLineIndex >= dialogueLines.Length)
-        {
             EndDialogueAndLoadScene();
-        }
         else
-        {
-            DisplayCurrentLine(); // Если реплики еще есть, показываем следующую
-        }
+            DisplayCurrentLine();
     }
 
-    // Метод просто выводит текущую реплику на экран
-    void DisplayCurrentLine()
+    private void DisplayCurrentLine()
     {
         if (characterText != null)
-        {
             characterText.text = dialogueLines[currentLineIndex];
-        }
     }
 
-    // Конец диалога: загружаем сцену дома
-    void EndDialogueAndLoadScene()
+    private void EndDialogueAndLoadScene()
     {
-        if (dialoguePanel != null) dialoguePanel.SetActive(false);
+        dialogueStarted = false;
+        dialogueCompleted = true;
+        IsDialogueActive = false;
 
-        // Оставляем в памяти невидимую "записку" для мамы, что продукты куплены!
+        if (dialoguePanel != null)
+            dialoguePanel.SetActive(false);
+
         PlayerPrefs.SetInt("BoughtItems", 1);
         PlayerPrefs.Save();
 
-        // Перекидываем игрока обратно домой в HomeScene
+        SetPlayerControl(true);
+
         SceneManager.LoadScene("HomeScene");
     }
 
-    // Включение/выключение управления игроком и показ мышки
     private void SetPlayerControl(bool state)
     {
-        if (movementScript != null) movementScript.enabled = state;
-        if (inputScript != null) inputScript.enabled = state;
+        if (movementScript != null)
+            movementScript.enabled = state;
+
+        if (inputScript != null)
+            inputScript.enabled = state;
 
         if (!state)
         {
-            // Если диалог идет: освобождаем мышку, чтобы кликать по экрану
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
         else
         {
-            // Если диалог кончился: прячем мышку обратно в центр экрана
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (dialogueStarted)
+        {
+            dialogueStarted = false;
+            IsDialogueActive = false;
+
+            if (dialoguePanel != null)
+                dialoguePanel.SetActive(false);
+
+            SetPlayerControl(true);
         }
     }
 }
